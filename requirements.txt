@@ -1,2 +1,5 @@
 sly==0.4
 Verilog-VCD==1.11
+pandas
+numpy
+pandasql
