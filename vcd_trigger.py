@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from sly import Lexer, Parser
 import inspect
 from Verilog_VCD import parse_vcd
@@ -17,6 +17,8 @@ class CalcLexer(Lexer):
     tokens = {
         NAME,
         NUMBER,
+        STAR,
+        
         HEAD, 
         TAIL, 
 
@@ -30,6 +32,7 @@ class CalcLexer(Lexer):
     # Tokens
     NAME = r'[a-zA-Z_][a-zA-Z0-9_]*'
     NUMBER = r'\d+'
+    STAR = r'\*'
 
     AND = r'&'
     OR = r'\|'
@@ -73,6 +76,10 @@ class CalcParser(Parser):
         self.condition = p.expr
         return self.selected, self.condition, self.where_idents
 
+    @_('STAR')
+    def select(self, p):
+        return "*"
+
     @_('NAME "," select')
     def select(self, p):
         return [p.NAME] + p.select
@@ -110,10 +117,13 @@ class CalcParser(Parser):
         self.where_idents.add(p.NAME)
         return p.NAME
 
-def preprocess(vcd):
+def preprocess(vcd, select_names):
     # TODO
     # it drops fst_states as they seems not to have 'tv' key. aliases?
-    return {v['nets'][0]['name']: v for _, v in vcd.items() if 'tv' in v}
+    res = {v['nets'][0]['name']: v for _, v in vcd.items() if 'tv' in v}
+    if '*' in select_names:
+        return res
+    return {k: v for k, v in res.items() if k in select_names}
 
 
 def get_timepoints(vcd):
@@ -164,24 +174,25 @@ def gen_query(table_varname : str, select, where: str):
         q += f" where {where}"
     return q
 
-def parse_query(input):
+def parse_query(input) -> Tuple[str, List[str]]:
     lexer = CalcLexer()
     parser = CalcParser()
     select, where, where_idents = parser.parse(lexer.tokenize(input))
-    select.update(where_idents)
+    if '*' not in select: 
+        select.update(where_idents)
     q = gen_query("df", select, where)
-    return q
+    return q, select
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print("ERROR: no input specified")
         exit(1)
-    q = parse_query(sys.argv[1])
+    q, select = parse_query(sys.argv[1])
         
     # vcd_path = Path("/home/mateusz/github/mig/mod.vcd")
     vcd_path = Path("/home/mateusz/github/mtkcpu/jtag.vcd")
     vcd = parse_vcd(vcd_path)
-    vcd = preprocess(vcd)
+    vcd = preprocess(vcd, select)
     df = gen_table(vcd)
     print(df)
 
