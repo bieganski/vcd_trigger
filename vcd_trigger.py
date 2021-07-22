@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from os import name
 from typing import Dict, List, Tuple
 from sly import Lexer, Parser
 import inspect
@@ -7,6 +8,8 @@ from Verilog_VCD import parse_vcd
 from pathlib import Path
 import pandasql as ps 
 import sys
+from argparse import ArgumentParser
+
 
 fst = lambda x: x[0]
 snd = lambda x: x[1]
@@ -117,10 +120,17 @@ class CalcParser(Parser):
         self.where_idents.add(p.NAME)
         return p.NAME
 
-def preprocess(vcd, select_names):
+def preprocess(vcd, select_names=['*']):
     # TODO
     # it drops fst_states as they seems not to have 'tv' key. aliases?
-    res = {v['nets'][0]['name']: v for _, v in vcd.items() if 'tv' in v}
+    def gen_name(v):
+        name = v['nets'][0]['name'] 
+        hier = v['nets'][0]['hier']
+        if hier == 'top':
+            return name
+        name = ".".join(hier.split('.')[1:]) + "." + name
+        return name
+    res = {gen_name(v): v for _, v in vcd.items() if 'tv' in v}
     if '*' in select_names:
         return res
     return {k: v for k, v in res.items() if k in select_names}
@@ -183,20 +193,46 @@ def parse_query(input) -> Tuple[str, List[str]]:
     q = gen_query("df", select, where)
     return q, select
 
-if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        print("ERROR: no input specified")
-        exit(1)
-    q, select = parse_query(sys.argv[1])
+def do_find(vcd_path, list):
+    vcd = parse_vcd(vcd_path)
+    vcd = preprocess(vcd)
+    res = [k for k, v in vcd.items() if list in k]
+    from pprint import pprint
+    pprint(res)
         
-    # vcd_path = Path("/home/mateusz/github/mig/mod.vcd")
-    vcd_path = Path("/home/mateusz/github/mtkcpu/jtag.vcd")
+def do_query(vcd_path, query):
+    q, select = parse_query(query)        
     vcd = parse_vcd(vcd_path)
     vcd = preprocess(vcd, select)
     df = gen_table(vcd)
+    sanity_check(df, select)
     print(df)
-
-    res = ps.sqldf(q, globals())
+    res = ps.sqldf(q, locals())
     print(q)
     print(res)
 
+def sanity_check(df, select):
+    all = list(df.keys()) 
+    for sig in select:
+        if sig not in all:
+            print(f"ERROR: There is no '{sig}' signal in given waveform!")
+            exit(1)
+
+def main(query, list):
+    # vcd_path = Path("/home/mateusz/github/mig/mod.vcd")
+    vcd_path = Path("/home/mateusz/github/mtkcpu/jtag.vcd")
+
+    if query:
+        do_query(vcd_path, query)
+    elif list:
+        do_find(vcd_path, list)
+    else:
+        raise ValueError("Either --list or --query must be specified!")
+
+
+if __name__ == '__main__':
+    parser = ArgumentParser(description="Trigger VCD")
+    parser.add_argument("--query", required=False)
+    parser.add_argument("--list", required=False)
+    main(**vars(parser.parse_args()))
+    
