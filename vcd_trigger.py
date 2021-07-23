@@ -9,7 +9,8 @@ from pathlib import Path
 import pandasql as ps 
 import sys
 from argparse import ArgumentParser
-
+from difflib import get_close_matches
+from typing import List, Optional, Dict
 
 fst = lambda x: x[0]
 snd = lambda x: x[1]
@@ -22,8 +23,8 @@ class CalcLexer(Lexer):
         NUMBER,
         STAR,
         
-        HEAD, 
-        TAIL, 
+        # HEAD, 
+        # TAIL, 
 
         LPAREN, RPAREN,
         AND, OR, EQ, NEQ
@@ -44,8 +45,8 @@ class CalcLexer(Lexer):
     LPAREN = r'\('
     RPAREN = r'\)'
 
-    HEAD = r'HEAD'
-    TAIL = r'TAIL'
+    # HEAD = r'HEAD'
+    # TAIL = r'TAIL'
 
     # Ignored pattern
     ignore_newline = r'\n+'
@@ -168,15 +169,12 @@ def gen_table(vcd):
     table = pd.DataFrame(table,index=names).T
     return table
 
-
 def var_name(var):
     callers_local_vars = inspect.currentframe().f_back.f_locals.items()
     all = [var_name for var_name, var_val in callers_local_vars if var_val is var]
     assert(len(all) == 1)
     return all[0]
 
-
-from typing import List, Optional, Dict
 def gen_query(table_varname : str, select, where: str):
     select = ",".join(select)
     q = f"select {select} from {table_varname}"
@@ -193,42 +191,46 @@ def parse_query(input) -> Tuple[str, List[str]]:
     q = gen_query("df", select, where)
     return q, select
 
-def do_find(vcd_path, list):
+def do_find(vcd_path, list, verbose=False):
     vcd = parse_vcd(vcd_path)
     vcd = preprocess(vcd)
     res = [k for k, v in vcd.items() if list in k]
-    from pprint import pprint
-    pprint(res)
+    if verbose:
+        from pprint import pprint
+        pprint(res)
+    return res
         
 def do_query(vcd_path, query):
     q, select = parse_query(query)        
     vcd = parse_vcd(vcd_path)
     vcd = preprocess(vcd, select)
     df = gen_table(vcd)
-    sanity_check(df, select)
+    all = do_find(vcd_path, "", verbose=False)
+    sanity_check(all, select)
     print(df)
     res = ps.sqldf(q, locals())
     print(q)
     print(res)
 
-def sanity_check(df, select):
-    all = list(df.keys()) 
+def sanity_check(all, select):
+    # all = list(df.keys()) 
     for sig in select:
         if sig not in all:
             print(f"ERROR: There is no '{sig}' signal in given waveform!")
+            maybe = get_close_matches(sig, all, n=5)
+            print(f"Maybe you meant one of {maybe}?")
             exit(1)
 
 def main(query, list):
-    # vcd_path = Path("/home/mateusz/github/mig/mod.vcd")
-    vcd_path = Path("/home/mateusz/github/mtkcpu/jtag.vcd")
+    # vcd_path = Path("example_vcd/mod.vcd")
+    vcd_path = Path("example_vcd/jtag.vcd")
 
     if query:
         do_query(vcd_path, query)
     elif list:
-        do_find(vcd_path, list)
+        do_find(vcd_path, list, verbose=True)
     else:
         raise ValueError("Either --list or --query must be specified!")
-
 
 if __name__ == '__main__':
     parser = ArgumentParser(description="Trigger VCD")
