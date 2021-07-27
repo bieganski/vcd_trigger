@@ -65,7 +65,7 @@ def parse_vcd(file, only_sigs=0, use_stdout=0, siglist=[], opt_timescale=''):
             # put most frequent lines encountered at start of if/elif, so other
             #   clauses usually don't need to be tested 
             if line[0] in ('b', 'B', 'r', 'R'):
-                (value,code) = line[1:].split()
+                (value,code) = line.split() # line[1:].split()
                 if (code in data):
                     if (use_stdout):
                         print( time, value )

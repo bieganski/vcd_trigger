@@ -34,8 +34,9 @@ class CalcLexer(Lexer):
     literals = {'{', '}', '[', ']', ',', ':'}
 
     # Tokens
-    NAME = r'[a-zA-Z_][a-zA-Z0-9_]*'
-    NUMBER = r'\d+'
+    NAME = r'[a-zA-Z_][a-zA-Z0-9_\.\$]*'
+    # NUMBER = r'\d+'
+    NUMBER = r'(0[bx])?[0-9a-fA-F]+' # catch also hex and bin
     STAR = r'\*'
 
     AND = r'&'
@@ -73,6 +74,11 @@ class CalcParser(Parser):
         self.selected = {}
         self.condition = {}
         self.where_idents = set()
+
+    @_('select')
+    def top(self, p):
+        self.selected = set(p.select)
+        return self.selected, None, None
 
     @_('select ":" expr')
     def top(self, p):
@@ -114,7 +120,14 @@ class CalcParser(Parser):
 
     @_('NUMBER')
     def expr(self, p):
-        return p.NUMBER # int(p.NUMBER)
+        n = p.NUMBER
+        # base = 10
+        # if len(n) >= 2:
+        #     base = {
+        #         'b': 2,
+        #         'x': 16,
+        #     }.get(n[1], 10)
+        return n # str(int(n, base=base))
 
     @_('NAME')
     def expr(self, p):
@@ -129,7 +142,8 @@ def preprocess(vcd, select_names=['*']):
         hier = v['nets'][0]['hier']
         if hier == 'top':
             return name
-        name = ".".join(hier.split('.')[1:]) + "." + name
+        sep = '_'
+        name = sep.join(hier.split('.')[1:]) + sep + name
         return name
     res = {gen_name(v): v for _, v in vcd.items() if 'tv' in v}
     if '*' in select_names:
@@ -153,6 +167,16 @@ def gen_table(vcd):
     for _, sig in vcd.items():
         timevals = sig['tv'] # list of pairs [time, val] 
         ts, vs = list(zip(*timevals)) # unzip
+        def gen_val(v):
+            base_map = {
+                'b': 2,
+                'x': 16,
+            }
+            base = base_map.get(v[0], 10)
+            if v[0] < '0' or v[0] > '9':
+                v = v[1:]
+            return int(v, base=base)
+        vs = list(map(gen_val, vs))
         assert ts[0] == 0
         # print("===============================")
         # print(f"ts: {ts}")
@@ -186,15 +210,16 @@ def parse_query(input) -> Tuple[str, List[str]]:
     lexer = CalcLexer()
     parser = CalcParser()
     select, where, where_idents = parser.parse(lexer.tokenize(input))
-    if '*' not in select: 
-        select.update(where_idents)
+    if '*' not in select:
+        if where_idents:
+            select.update(where_idents)
     q = gen_query("df", select, where)
     return q, select
 
 def do_find(vcd_path, list, verbose=False):
     vcd = parse_vcd(vcd_path)
     vcd = preprocess(vcd)
-    res = [k for k, v in vcd.items() if list in k]
+    res = [k for k, _ in vcd.items() if list in k]
     if verbose:
         from pprint import pprint
         pprint(res)
@@ -204,31 +229,34 @@ def do_query(vcd_path, query):
     q, select = parse_query(query)        
     vcd = parse_vcd(vcd_path)
     vcd = preprocess(vcd, select)
-    df = gen_table(vcd)
     all = do_find(vcd_path, "", verbose=False)
     sanity_check(all, select)
-    print(df)
+    df = gen_table(vcd)
+    print(f"=== df len: {len(df)}")
+    print(df.head())
     res = ps.sqldf(q, locals())
     print(q)
-    print(res)
+
+    # TODO make it configurable, e.g.
+    # select clk as hex, addr
+    print(res.applymap(hex))
 
 def sanity_check(all, select):
     # all = list(df.keys()) 
     for sig in select:
         if sig not in all:
             print(f"ERROR: There is no '{sig}' signal in given waveform!")
-            maybe = get_close_matches(sig, all, n=5)
-            print(f"Maybe you meant one of {maybe}?")
+            maybe = get_close_matches(sig, all, n=10)
+            from pprint import pprint
+            print(f"Maybe you meant one of following?:")
+            pprint(maybe)
             exit(1)
 
-def main(query, list):
-    # vcd_path = Path("example_vcd/mod.vcd")
-    vcd_path = Path("example_vcd/jtag.vcd")
-
+def main(query, list, path):
     if query:
-        do_query(vcd_path, query)
+        do_query(path, query)
     elif list:
-        do_find(vcd_path, list, verbose=True)
+        do_find(path, list, verbose=True)
     else:
         raise ValueError("Either --list or --query must be specified!")
 
@@ -236,5 +264,6 @@ if __name__ == '__main__':
     parser = ArgumentParser(description="Trigger VCD")
     parser.add_argument("--query", required=False)
     parser.add_argument("--list", required=False)
+    parser.add_argument("--path", required=False, default="example_vcd/mod.vcd") # "/home/mateusz/github/mtkcpu/jtag.vcd")
     main(**vars(parser.parse_args()))
     
