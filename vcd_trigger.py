@@ -11,6 +11,8 @@ import sys
 from argparse import ArgumentParser
 from difflib import get_close_matches
 from typing import List, Optional, Dict
+from pprint import pprint
+
 
 fst = lambda x: x[0]
 snd = lambda x: x[1]
@@ -221,17 +223,19 @@ def do_find(vcd_path, list, verbose=False):
     vcd = preprocess(vcd)
     res = [k for k, _ in vcd.items() if list in k]
     if verbose:
-        from pprint import pprint
         pprint(res)
     return res
         
 def do_query(vcd_path, query):
     q, select = parse_query(query)        
     vcd = parse_vcd(vcd_path)
+    pprint(vcd)
     vcd = preprocess(vcd, select)
     all = do_find(vcd_path, "", verbose=False)
     sanity_check(all, select)
     df = gen_table(vcd)
+    print(f"=== =========================================")
+    pprint(vcd)
     print(f"=== df len: {len(df)}")
     print(df.head())
     res = ps.sqldf(q, locals())
@@ -242,12 +246,12 @@ def do_query(vcd_path, query):
     print(res.applymap(hex))
 
 def sanity_check(all, select):
-    # all = list(df.keys()) 
+    if "*" in select:
+        return
     for sig in select:
         if sig not in all:
             print(f"ERROR: There is no '{sig}' signal in given waveform!")
             maybe = get_close_matches(sig, all, n=10)
-            from pprint import pprint
             print(f"Maybe you meant one of following?:")
             pprint(maybe)
             exit(1)

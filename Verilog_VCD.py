@@ -2,6 +2,8 @@
 # http://cpansearch.perl.org/src/GSULLIVAN/Verilog-VCD-0.03/lib/Verilog/VCD.pm 
 
 import re
+from pprint import pprint
+
 
 global timescale
 global endtime
@@ -140,19 +142,20 @@ def parse_vcd(file, only_sigs=0, use_stdout=0, siglist=[], opt_timescale=''):
                 name = "".join(ls[4:-1])
                 path = '.'.join(hier)
                 full_name = path + '.' + name
+                pprint(data)
                 if (full_name in usigs) or all_sigs:
-                  if code not in data:
-                      data[code] = {}
-                  if 'nets' not in data[code]:
-                      data[code]['nets'] = []
-                  var_struct = {
-                      'type' : type,
-                      'name' : name,
-                      'size' : size,
-                      'hier' : path,
-                   } 
-                  if var_struct not in data[code]['nets']:
-                      data[code]['nets'].append( var_struct )
+                    if code not in data:
+                        data[code] = {}
+                    if 'nets' not in data[code]:
+                        data[code]['nets'] = []
+                    var_struct = {
+                        'type' : type,
+                        'name' : name,
+                        'size' : size,
+                        'hier' : path,
+                    }
+                    if var_struct not in data[code]['nets']:
+                        data[code]['nets'].append( var_struct )
 
     fh.close()
 
